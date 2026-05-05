@@ -1,13 +1,15 @@
 const express = require('express');
-const mongoose = require('mongoose');
+const connectDB = require('./config/db');
 require('dotenv').config();
 
 const app = express();
+
 app.use(express.json());
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log(err));
+connectDB();
+
+const authRoutes = require('./routes/authRoutes');
+app.use('/api/auth', authRoutes);
 
 app.get("/", (req, res) => {
   res.send("Zeltan Store API Running");
