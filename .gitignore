@@ -1,26 +1,16 @@
-# Environment variables
-.env
-.env.local
-.env.development
-.env.production
-.env.staging
-
-# Sensitive files
-Zeltan Store.txt
-
 # Dependencies
 node_modules/
-**/node_modules/
 
-# Logs
-logs/
-*.log
-npm-debug.log*
+# Environment variables
+.env
+
+# Text and documentation files
+*.txt
+*.pdf
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# Build output
-dist/
-build/
+# Logs
+*.log
