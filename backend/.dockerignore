@@ -1,0 +1,32 @@
+# Dependencies — installed fresh inside the image
+node_modules
+
+# Environment variables — never bake secrets into an image
+.env
+.env.local
+.env.production
+
+# Git files — not needed inside a container
+.git
+.gitignore
+
+# Docker files — no need to copy these into themselves
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Logs
+npm-debug.log
+*.log
+
+# Documentation and misc files — keep image lean
+*.txt
+*.pdf
+*.md
+README*
+
+# OS files
+.DS_Store
+Thumbs.db
+#cloud credentials
+aws.env

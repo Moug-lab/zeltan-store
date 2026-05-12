@@ -1,20 +1,32 @@
-# Use official Node image
-FROM node:18
+# Use official Node.js image
+FROM node:20-alpine
 
-# Set working directory
+# Set production environment
+ENV NODE_ENV=production
+
+# Set working directory inside container
 WORKDIR /app
 
-# Copy files
+# Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install
+# Install ONLY production dependencies
+RUN npm install --omit=dev
 
-# Copy rest of code
+# Copy all backend files
 COPY . .
 
-# Expose port
+# Create non-root user
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+# Change ownership
+RUN chown -R appuser:appgroup /app
+
+# Switch to non-root user
+USER appuser
+
+# Expose backend port
 EXPOSE 5000
 
-# Start server
+# Start backend server
 CMD ["node", "server.js"]

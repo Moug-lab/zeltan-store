@@ -1,16 +1,18 @@
 # Dependencies
 node_modules/
 
-# Environment variables
+# Environment files
 .env
+aws.env
+aws-temp.env
 
-# Text and documentation files
+# Logs
+*.log
+
+# Notes / documents
 *.txt
 *.pdf
 
 # OS files
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
