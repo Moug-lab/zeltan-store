@@ -1,150 +1,115 @@
-# ============================================================
+# ==============================================================================
 # SECURE DEVSECOPS CI/CD PIPELINE — ZELTAN STORE BACKEND
-# ============================================================
+# ==============================================================================
 #
-# PURPOSE:
-#   This GitHub Actions workflow implements a secure-by-design
-#   DevSecOps CI/CD pipeline for the Zeltan Store backend.
+# PIPELINE PHASES:
 #
-# WHAT THIS PIPELINE DOES:
+#   JOB 1 — CI (Continuous Integration)
+#     ├── Checkout source code
+#     ├── Setup Node.js with cache
+#     ├── Install dependencies (npm ci)
+#     ├── Security audit (npm audit)
+#     ├── Lint source code
+#     ├── Run test suite
+#     ├── Setup Docker Buildx
+#     ├── Build Docker image (no push)
+#     ├── Verify image exists
+#     ├── Advanced scan — Snyk
+#     ├── CVE scan — Trivy (HARD GATE)
+#     ├── Generate SARIF security report
+#     ├── Generate SBOM (CycloneDX)
+#     ├── Upload SBOM artifact
+#     └── Upload SARIF to GitHub Security tab
 #
-#   1. CONTINUOUS INTEGRATION (CI)
-#      - checkout source code
-#      - install dependencies
-#      - audit npm packages
-#      - lint source code
-#      - execute tests
-#      - build hardened Docker image
-#      - perform vulnerability scanning
-#      - generate SBOM
-#      - upload SARIF security reports
+#   JOB 2 — CD (Continuous Delivery)
+#     ├── Checkout source code
+#     ├── Setup Docker Buildx
+#     ├── Login to Docker Hub (secrets only)
+#     ├── Extract image metadata and tags
+#     ├── Install Cosign
+#     ├── Build and push image (multi-arch)
+#     ├── Sign image cryptographically (Cosign keyless)
+#     └── Confirm publication
 #
-#   2. CONTINUOUS DELIVERY (CD)
-#      - authenticate securely to Docker Hub
-#      - generate versioned image tags
-#      - build production image
-#      - push image to Docker Hub
-#      - cryptographically sign image using Cosign
+#   JOB 3 — NOTIFY (Always runs)
+#     └── Rich summary (GitHub UI + raw log)
 #
-#   3. POST-PIPELINE REPORTING
-#      - summarize pipeline outcome
-#      - show CI/CD status
-#      - confirm publication results
+# ==============================================================================
+# SECURITY PRINCIPLES
+# ==============================================================================
 #
-# ============================================================
-# SECURITY PRINCIPLES IMPLEMENTED
-# ============================================================
+#   ✔  Least Privilege Permissions
+#   ✔  Secret Isolation via GitHub Secrets
+#   ✔  Immutable Image Builds
+#   ✔  Vulnerability Scanning (Snyk + Trivy)
+#   ✔  Supply Chain Security (SBOM + Cosign)
+#   ✔  Container Signing (keyless via GitHub OIDC)
+#   ✔  Dependency Auditing
+#   ✔  Multi-Architecture Builds (amd64 + arm64)
+#   ✔  Controlled Deployment Gates
+#   ✔  SARIF Security Reporting
 #
-# ✔ Least Privilege Permissions
-# ✔ Secret Isolation via GitHub Secrets
-# ✔ Immutable Image Builds
-# ✔ Vulnerability Scanning
-# ✔ Supply Chain Awareness
-# ✔ Container Signing
-# ✔ SBOM Generation
-# ✔ Dependency Auditing
-# ✔ Secure Docker Practices
-# ✔ Multi-Architecture Builds
-# ✔ Controlled Deployment Gates
-#
-# ============================================================
+# ==============================================================================
 # REQUIRED GITHUB SECRETS
-# ============================================================
+# ==============================================================================
 #
-# GitHub Repo
-# → Settings
-# → Secrets and Variables
-# → Actions
+#   Go to: Repo → Settings → Secrets and Variables → Actions
 #
-# REQUIRED:
+#   DOCKER_USERNAME   Your Docker Hub username
+#   DOCKER_PASSWORD   Docker Hub ACCESS TOKEN (not your password)
+#                     Create at: hub.docker.com → Account Settings → Security
+#   SNYK_TOKEN        API token from: https://app.snyk.io/account
 #
-#   DOCKER_USERNAME
-#     Your Docker Hub username
-#
-#   DOCKER_PASSWORD
-#     Docker Hub ACCESS TOKEN
-#     (NOT your actual password)
-#
-#   SNYK_TOKEN
-#     API token from:
-#     https://app.snyk.io/account
-#
-# ============================================================
+# ==============================================================================
 
 name: Secure DevSecOps CI/CD Pipeline
 
-# ============================================================
-# PIPELINE TRIGGERS
-# ============================================================
-#
-# Pushes to master:
-#   → run full CI/CD
-#
-# Pull requests to master:
-#   → run CI only
-#   → NO Docker push
-#
+# ==============================================================================
+# TRIGGERS
+# ==============================================================================
+#   push to master    → full CI + CD
+#   pull_request      → CI only, no Docker push
+# ==============================================================================
 on:
   push:
     branches:
       - master
-      - dev
-
   pull_request:
     branches:
       - master
-      - dev
 
-# ============================================================
-# LEAST PRIVILEGE PERMISSIONS
-# ============================================================
-#
-# IMPORTANT:
-#   GitHub Actions tokens should NEVER have broad permissions.
-#
-# contents:read
-#   → only allows reading repository code
-#
-# packages:read
-#   → read package metadata if needed
-#
-# id-token:write
-#   → REQUIRED for Cosign keyless signing via GitHub OIDC
-#
+# ==============================================================================
+# PERMISSIONS — Least Privilege
+# ==============================================================================
+#   contents:read        read repo code only
+#   packages:read        read package metadata
+#   id-token:write       required for Cosign keyless signing via GitHub OIDC
+#   security-events:write upload SARIF to GitHub Security tab
+# ==============================================================================
 permissions:
   contents: read
   packages: read
   id-token: write
   security-events: write
 
-# ============================================================
+# ==============================================================================
 # GLOBAL ENVIRONMENT VARIABLES
-# ============================================================
+# ==============================================================================
 env:
   IMAGE_NAME: mabms/zeltan-store-backend
   NODE_VERSION: "20"
   BACKEND_DIR: ./backend
 
-# ============================================================
+# ==============================================================================
 # JOBS
-# ============================================================
+# ==============================================================================
 jobs:
 
-  # ==========================================================
-  # JOB 1 — CONTINUOUS INTEGRATION (CI)
-  # ==========================================================
-  #
-  # PURPOSE:
-  #   Verify:
-  #     - code quality
-  #     - security posture
-  #     - Docker image safety
-  #
-  # This job MUST PASS before deployment is allowed.
-  #
+  # ============================================================================
+  # JOB 1 — CI
+  # ============================================================================
   ci:
     name: CI — Build, Test & Security Scan
-
     runs-on: ubuntu-latest
 
     defaults:
@@ -153,142 +118,136 @@ jobs:
 
     steps:
 
-      # ======================================================
-      # STEP 1 — CHECKOUT SOURCE CODE
-      # ======================================================
+      # --------------------------------------------------------------------------
+      # STEP 1 — CHECKOUT
+      # fetch-depth: 0 = full history (required by Snyk and SonarQube analysis)
+      # --------------------------------------------------------------------------
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # ======================================================
-      # STEP 2 — SETUP NODE.JS
-      # ======================================================
-      - name: ⚙️ Setup Node.js
+      # --------------------------------------------------------------------------
+      # STEP 2 — NODE.JS SETUP
+      # cache: npm speeds up subsequent runs by reusing node_modules cache
+      # --------------------------------------------------------------------------
+      - name: ⚙️ Setup Node.js ${{ env.NODE_VERSION }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
-      # ======================================================
+      # --------------------------------------------------------------------------
       # STEP 3 — INSTALL DEPENDENCIES
-      # ======================================================
+      # npm ci = clean install, reads package-lock.json exactly, reproducible
+      # --------------------------------------------------------------------------
       - name: 📦 Install Dependencies
         run: npm ci --prefer-offline
 
-      # ======================================================
+      # --------------------------------------------------------------------------
       # STEP 4 — NPM SECURITY AUDIT
-      # ======================================================
-      #
-      # Fails pipeline on:
-      #   - HIGH vulnerabilities
-      #   - CRITICAL vulnerabilities
-      #
+      # Fails on HIGH or CRITICAL CVEs in npm dependencies
+      # continue-on-error: true = warn but do not block (Snyk + Trivy are the gates)
+      # --------------------------------------------------------------------------
       - name: 🔍 Dependency Security Audit
         run: npm audit --audit-level=high
         continue-on-error: true
 
-      # ======================================================
-      # STEP 5 — LINT SOURCE CODE
-      # ======================================================
+      # --------------------------------------------------------------------------
+      # STEP 5 — LINT
+      # Skips gracefully if no lint script exists in package.json
+      # --------------------------------------------------------------------------
       - name: 🧹 Lint Source Code
         run: |
           if npm run | grep -q " lint"; then
             npm run lint
           else
             echo "⚠️ No lint script found — skipping"
+            echo "   Add ESLint: npm install eslint --save-dev"
           fi
 
-      # ======================================================
-      # STEP 6 — RUN TESTS
-      # ======================================================
+      # --------------------------------------------------------------------------
+      # STEP 6 — TESTS
+      # Detects missing or stub test scripts and skips gracefully
+      # CI=true runs Jest in non-interactive mode
+      # --------------------------------------------------------------------------
       - name: 🧪 Run Test Suite
         run: |
           SCRIPT=$(node -e "const p=require('./package.json'); console.log(p.scripts&&p.scripts.test||'')")
           if [ -z "$SCRIPT" ] || echo "$SCRIPT" | grep -q "exit 1"; then
             echo "⚠️ No test suite configured — skipping"
+            echo "   Add Jest: npm install jest --save-dev"
           else
             CI=true npm test -- --passWithNoTests
           fi
         env:
           NODE_ENV: test
 
-      # ======================================================
-      # STEP 7 — SETUP DOCKER BUILDX
-      # ======================================================
+      # --------------------------------------------------------------------------
+      # STEP 7 — DOCKER BUILDX
+      # Enables multi-platform builds and advanced layer caching
+      # --------------------------------------------------------------------------
       - name: 🐳 Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
-          driver-opts: |
-            network=host
+          driver-opts: network=host
 
-      # ======================================================
+      # --------------------------------------------------------------------------
       # STEP 8 — BUILD DOCKER IMAGE
-      # ======================================================
-      #
-      # Builds but DOES NOT PUSH.
-      # Image must pass security scans first.
-      #
+      # push: false — image is built locally for scanning only
+      # load: true  — loads image into local Docker daemon for Trivy
+      # cache-from/to — reuses GitHub Actions cache between runs
+      # --------------------------------------------------------------------------
       - name: 🏗️ Build Docker Image
         uses: docker/build-push-action@v5
         with:
           context: ${{ env.BACKEND_DIR }}
           push: false
           load: true
-
           tags: |
             ${{ env.IMAGE_NAME }}:latest
             ${{ env.IMAGE_NAME }}:${{ github.sha }}
-
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
           build-args: |
             NODE_ENV=production
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             GIT_COMMIT=${{ github.sha }}
 
-      # ======================================================
-      # STEP 9 — VERIFY IMAGE EXISTS
-      # ======================================================
+      # --------------------------------------------------------------------------
+      # STEP 9 — VERIFY IMAGE
+      # Confirms image was built and loaded into the local Docker daemon
+      # --------------------------------------------------------------------------
       - name: 🔎 Verify Docker Image
         run: |
-          docker image ls
-          docker image inspect ${{ env.IMAGE_NAME }}:latest
+          docker image ls ${{ env.IMAGE_NAME }}
+          docker image inspect ${{ env.IMAGE_NAME }}:latest \
+            --format "ID: {{.Id}} | Size: {{.Size}} | Created: {{.Created}}"
 
-      # ======================================================
-      # STEP 10 — ADVANCED SECURITY SCAN (SNYK)
-      # ======================================================
-      #
-      # Snyk provides:
-      #   - exploit intelligence
-      #   - dependency graph analysis
-      #   - remediation recommendations
-      #
+      # --------------------------------------------------------------------------
+      # STEP 10 — SNYK ADVANCED SCAN
+      # Deeper than npm audit — includes exploit maturity and fix recommendations
+      # continue-on-error: true — Trivy is the hard gate
+      # --------------------------------------------------------------------------
       - name: 🛡️ Advanced Dependency Scan (Snyk)
         uses: snyk/actions/node@0.4.0
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          args: --severity-threshold=high --file=backend/package.json
+          args: >-
+            --severity-threshold=high
+            --file=backend/package.json
 
-      # ======================================================
-      # STEP 11 — TRIVY VULNERABILITY SCAN
-      # ======================================================
-      #
-      # Scans:
-      #   - OS packages
-      #   - npm dependencies
-      #   - container vulnerabilities
-      #
-      # FAILS pipeline on:
-      #   - HIGH CVEs
-      #   - CRITICAL CVEs
-      #
+      # --------------------------------------------------------------------------
+      # STEP 11 — TRIVY CVE SCAN (HARD GATE)
+      # exit-code: "1" = pipeline FAILS if CRITICAL CVEs found
+      # ignore-unfixed: true = skip CVEs with no available patch
+      # This step prevents vulnerable images from ever reaching Docker Hub
+      # --------------------------------------------------------------------------
       - name: 🛡️ Scan Image for Vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
           format: table
@@ -297,11 +256,13 @@ jobs:
           severity: CRITICAL
           vuln-type: os,library
 
-      # ======================================================
-      # STEP 12 — GENERATE SARIF SECURITY REPORT
-      # ======================================================
-      - name: 📊 Generate Security Report (SARIF)
-        uses: aquasecurity/trivy-action@0.35.0
+      # --------------------------------------------------------------------------
+      # STEP 12 — SARIF REPORT
+      # Runs Trivy again in reporting mode only (exit-code: "0" — never blocks)
+      # SARIF = Static Analysis Results Interchange Format
+      # --------------------------------------------------------------------------
+      - name: 📊 Generate SARIF Security Report
+        uses: aquasecurity/trivy-action@0.24.0
         if: always()
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
@@ -311,28 +272,22 @@ jobs:
           severity: CRITICAL,HIGH,MEDIUM
         continue-on-error: true
 
-      # ======================================================
-      # STEP 13 — GENERATE SBOM
-      # ======================================================
-      #
+      # --------------------------------------------------------------------------
+      # STEP 13 — SBOM GENERATION
       # SBOM = Software Bill of Materials
-      #
-      # Generates inventory of:
-      #   - packages
-      #   - dependencies
-      #   - versions
-      #   - OS components
-      #
-      - name: 📦 Generate SBOM
+      # CycloneDX JSON format — industry standard for supply chain compliance
+      # --------------------------------------------------------------------------
+      - name: 📦 Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@v0.17.8
         with:
           image: ${{ env.IMAGE_NAME }}:latest
           format: cyclonedx-json
           output-file: sbom.json
 
-      # ======================================================
+      # --------------------------------------------------------------------------
       # STEP 14 — UPLOAD SBOM
-      # ======================================================
+      # Stored as a downloadable pipeline artifact for audit and compliance
+      # --------------------------------------------------------------------------
       - name: 📤 Upload SBOM Artifact
         uses: actions/upload-artifact@v4
         if: always()
@@ -340,217 +295,270 @@ jobs:
           name: sbom-report
           path: sbom.json
 
-      # ======================================================
-      # STEP 15 — UPLOAD SARIF TO GITHUB SECURITY
-      # ======================================================
-      - name: 📤 Upload Security Report
+      # --------------------------------------------------------------------------
+      # STEP 15 — UPLOAD SARIF TO GITHUB SECURITY TAB
+      # Visible at: Repo → Security → Code scanning alerts
+      # --------------------------------------------------------------------------
+      - name: 📤 Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
           sarif_file: trivy-results.sarif
         continue-on-error: true
 
-  # ==========================================================
-  # JOB 2 — CONTINUOUS DELIVERY (CD)
-  # ==========================================================
-  #
-  # PURPOSE:
-  #   Push ONLY verified images to Docker Hub.
-  #
-  # CONDITIONS:
-  #   - CI must pass
-  #   - must be push to master
-  #
+  # ============================================================================
+  # JOB 2 — CD
+  # Runs ONLY when:
+  #   1. CI job passed
+  #   2. Event is a push to master (not a pull request)
+  # ============================================================================
   cd:
     name: CD — Publish Docker Image
-
     runs-on: ubuntu-latest
-
     needs: ci
-
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
 
     steps:
 
-      # ======================================================
-      # STEP 1 — CHECKOUT REPOSITORY
-      # ======================================================
+      # --------------------------------------------------------------------------
+      # STEP 1 — CHECKOUT
+      # Each job runs on a fresh VM — must checkout again
+      # --------------------------------------------------------------------------
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      # ======================================================
-      # STEP 2 — SETUP DOCKER BUILDX
-      # ======================================================
+      # --------------------------------------------------------------------------
+      # STEP 2 — DOCKER BUILDX
+      # Must be set up again on this new VM
+      # --------------------------------------------------------------------------
       - name: 🐳 Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ======================================================
-      # STEP 3 — LOGIN TO DOCKER HUB
-      # ======================================================
-      #
-      # Uses encrypted GitHub Secrets.
-      #
+      # --------------------------------------------------------------------------
+      # STEP 3 — DOCKER HUB LOGIN
+      # Credentials come from GitHub Secrets — never hardcoded
+      # GitHub automatically masks secret values in all log output
+      # --------------------------------------------------------------------------
       - name: 🔐 Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # ======================================================
-      # STEP 4 — EXTRACT IMAGE METADATA
-      # ======================================================
+      # --------------------------------------------------------------------------
+      # STEP 4 — IMAGE METADATA AND TAGS
+      # Generates 3 tags per push:
+      #   :latest          always points to newest master image
+      #   :abc1234         short SHA — traceable to exact commit
+      #   :build-42        build number — useful for rollbacks
+      # --------------------------------------------------------------------------
       - name: 🏷️ Extract Docker Metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.IMAGE_NAME }}
-
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
-            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
+            type=raw,value=latest
             type=sha,prefix=,format=short
             type=raw,value=build-${{ github.run_number }}
 
-      # ======================================================
+      # --------------------------------------------------------------------------
       # STEP 5 — INSTALL COSIGN
-      # ======================================================
-      #
-      # Cosign provides:
-      #   - image signing
-      #   - integrity verification
-      #   - trusted provenance
-      #
-      - name: 🔐 Install Cosign
+      # Pinned to specific version — prevents supply-chain attacks on the tool
+      # Must be installed before push so signing happens immediately after
+      # --------------------------------------------------------------------------
+      - name: 🔏 Install Cosign
         uses: sigstore/cosign-installer@v3
         with:
           cosign-release: "v2.2.3"
 
-      # ======================================================
-      # STEP 6 — BUILD & PUSH IMAGE
-      # ======================================================
-      #
-      # Multi-architecture build:
-      #   - amd64
-      #   - arm64
-      #
+      # --------------------------------------------------------------------------
+      # STEP 6 — BUILD AND PUSH
+      # push: true — CI passed and CVE scan cleared, safe to publish
+      # platforms: amd64 + arm64 — works on cloud servers and ARM instances
+      # id: build-push — exposes digest output used for signing in next step
+      # --------------------------------------------------------------------------
       - name: 🚀 Build & Push Docker Image
         id: build-push
         uses: docker/build-push-action@v5
         with:
           context: ${{ env.BACKEND_DIR }}
-
           push: true
-
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
           platforms: linux/amd64,linux/arm64
-
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
           build-args: |
             NODE_ENV=production
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             GIT_COMMIT=${{ github.sha }}
             BUILD_NUMBER=${{ github.run_number }}
 
-      # ======================================================
-      # STEP 7 — SIGN CONTAINER IMAGE
-      # ======================================================
-      #
-      # Cryptographically signs image using:
-      #   - GitHub OIDC identity
-      #   - Sigstore Cosign
-      #
-      # Enables:
-      #   - trusted deployments
-      #   - image authenticity verification
-      #
+      # --------------------------------------------------------------------------
+      # STEP 7 — SIGN IMAGE (KEYLESS)
+      # Signs using the image digest (immutable) not the tag (mutable)
+      # Signature is recorded in Sigstore Rekor public transparency log
+      # Anyone can verify: cosign verify mabms/zeltan-store-backend:latest
+      # --------------------------------------------------------------------------
       - name: ✍️ Sign Container Image
         env:
           COSIGN_EXPERIMENTAL: "true"
           DIGEST: ${{ steps.build-push.outputs.digest }}
         run: |
           cosign sign --yes ${{ env.IMAGE_NAME }}@${DIGEST}
+          echo "✅ Image signed — recorded in Sigstore Rekor transparency log"
 
-      # ======================================================
-      # STEP 8 — CONFIRM IMAGE PUBLICATION
-      # ======================================================
-      - name: ✅ Confirm Docker Image Published
+      # --------------------------------------------------------------------------
+      # STEP 8 — CONFIRM PUBLICATION
+      # --------------------------------------------------------------------------
+      - name: ✅ Confirm Image Published
         run: |
           echo "================================================"
-          echo "✅ IMAGE SUCCESSFULLY PUBLISHED"
+          echo "✅ IMAGE SUCCESSFULLY PUBLISHED TO DOCKER HUB"
           echo "================================================"
-          echo "Repository : ${{ env.IMAGE_NAME }}"
-          echo "Branch     : ${{ github.ref_name }}"
-          echo "Commit SHA : ${{ github.sha }}"
-          echo "Actor      : ${{ github.actor }}"
-          echo "Run Number : ${{ github.run_number }}"
+          echo "  Repository : ${{ env.IMAGE_NAME }}"
+          echo "  Branch     : ${{ github.ref_name }}"
+          echo "  Commit     : ${{ github.sha }}"
+          echo "  Actor      : ${{ github.actor }}"
+          echo "  Run #      : ${{ github.run_number }}"
+          echo "------------------------------------------------"
+          echo "  Pull:"
+          echo "    docker pull ${{ env.IMAGE_NAME }}:latest"
+          echo "    docker pull ${{ env.IMAGE_NAME }}:build-${{ github.run_number }}"
           echo "================================================"
 
-  # ==========================================================
-  # JOB 3 — PIPELINE SUMMARY
-  # ==========================================================
-  #
-  # Runs ALWAYS:
-  #   - success
-  #   - failure
-  #   - skipped
-  #
+  # ============================================================================
+  # JOB 3 — NOTIFY
+  # if: always() ensures this runs regardless of CI or CD result
+  # Writes to $GITHUB_STEP_SUMMARY — renders as formatted page in GitHub UI
+  # Also prints to raw log for CLI users (gh run view --log)
+  # ============================================================================
   notify:
     name: Pipeline Summary
-
     runs-on: ubuntu-latest
-
     needs: [ci, cd]
-
     if: always()
 
     steps:
 
-      # ======================================================
-      # STEP 1 — PIPELINE SUMMARY
-      # ======================================================
       - name: 📋 Pipeline Summary
         run: |
-          echo "================================================"
-          echo "      ZELTAN STORE DEVSECOPS PIPELINE"
-          echo "================================================"
+          CI_RESULT="${{ needs.ci.result }}"
+          CD_RESULT="${{ needs.cd.result }}"
 
-          echo "Workflow  : ${{ github.workflow }}"
-          echo "Branch    : ${{ github.ref_name }}"
-          echo "Commit    : ${{ github.sha }}"
-          echo "Actor     : ${{ github.actor }}"
-          echo "Run #     : ${{ github.run_number }}"
-
-          echo "------------------------------------------------"
-          echo "CI Result : ${{ needs.ci.result }}"
-          echo "CD Result : ${{ needs.cd.result }}"
-          echo "------------------------------------------------"
-
-          if [ "${{ needs.ci.result }}" = "success" ] && \
-             [ "${{ needs.cd.result }}" = "success" ]; then
-
-            echo "🟢 PIPELINE PASSED"
-            echo "Docker image published successfully"
-
-          elif [ "${{ needs.ci.result }}" = "success" ] && \
-               [ "${{ needs.cd.result }}" = "skipped" ]; then
-
-            echo "🔵 CI PASSED"
-            echo "CD skipped (pull request)"
-
-          elif [ "${{ needs.ci.result }}" = "failure" ]; then
-
-            echo "🔴 CI FAILED"
-            echo "Security or quality gates blocked deployment"
-
+          # Determine overall status and message
+          if [ "$CI_RESULT" = "success" ] && [ "$CD_RESULT" = "success" ]; then
+            OVERALL="🟢 PASSED"
+            OVERALL_MSG="Image is live on Docker Hub and cryptographically signed."
+          elif [ "$CI_RESULT" = "success" ] && [ "$CD_RESULT" = "skipped" ]; then
+            OVERALL="🔵 CI PASSED"
+            OVERALL_MSG="CD skipped — pull request, not a merge to master."
+          elif [ "$CI_RESULT" = "failure" ]; then
+            OVERALL="🔴 CI FAILED"
+            OVERALL_MSG="Security or quality gates blocked deployment. Image was NOT pushed."
           else
-
-            echo "🟠 CD FAILED"
-            echo "CI passed but image publication failed"
-
+            OVERALL="🟠 CD FAILED"
+            OVERALL_MSG="CI passed but image publication failed. Check Docker Hub secrets."
           fi
 
+          # Format job result badges
+          format_badge() {
+            case "$1" in
+              success) echo "✅ success" ;;
+              failure) echo "❌ failure" ;;
+              skipped) echo "⏭️ skipped" ;;
+              *)       echo "⚪ $1"     ;;
+            esac
+          }
+
+          CI_BADGE=$(format_badge "$CI_RESULT")
+          CD_BADGE=$(format_badge "$CD_RESULT")
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+
+          # Write rich summary to GitHub Actions Summary UI
+          cat >> $GITHUB_STEP_SUMMARY << SUMMARY
+          # 🚀 Zeltan Store — DevSecOps Pipeline Report
+
+          ## $OVERALL
+
+          > $OVERALL_MSG
+
+          ---
+
+          ## 📊 Pipeline Results
+
+          | Job | Status |
+          |-----|--------|
+          | CI — Build, Test & Security Scan | $CI_BADGE |
+          | CD — Publish Docker Image | $CD_BADGE |
+
+          ---
+
+          ## 🔍 Run Details
+
+          | Field | Value |
+          |-------|-------|
+          | Workflow | \`${{ github.workflow }}\` |
+          | Branch | \`${{ github.ref_name }}\` |
+          | Commit | \`${{ github.sha }}\` |
+          | Actor | @${{ github.actor }} |
+          | Run Number | \`#${{ github.run_number }}\` |
+          | Triggered by | \`${{ github.event_name }}\` |
+
+          ---
+
+          ## 🛡️ Security Gates
+
+          | Check | Severity Gate | Mode |
+          |-------|--------------|------|
+          | npm audit | HIGH / CRITICAL | warn only |
+          | Snyk dependency scan | HIGH / CRITICAL | warn only |
+          | Trivy CVE scan | CRITICAL | hard fail |
+          | SARIF report | ALL severities | reporting |
+          | SBOM (CycloneDX) | — | artifact |
+          | Cosign signing | — | keyless OIDC |
+
+          ---
+
+          ## 🐳 Docker Image Tags
+
+          | Tag | Value |
+          |-----|-------|
+          | Latest | \`${{ env.IMAGE_NAME }}:latest\` |
+          | SHA | \`${{ env.IMAGE_NAME }}:${SHORT_SHA}\` |
+          | Build | \`${{ env.IMAGE_NAME }}:build-${{ github.run_number }}\` |
+
+          \`\`\`bash
+          # Pull the image
+          docker pull ${{ env.IMAGE_NAME }}:latest
+
+          # Verify Cosign signature
+          cosign verify \\
+            --certificate-identity-regexp \\
+              "https://github.com/${{ github.repository }}/*" \\
+            --certificate-oidc-issuer \\
+              "https://token.actions.githubusercontent.com" \\
+            ${{ env.IMAGE_NAME }}:latest
+          \`\`\`
+
+          ---
+          *Run [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) — Generated by GitHub Actions*
+          SUMMARY
+
+          # Raw log output for CLI users (gh run view --log)
+          echo "================================================"
+          echo "      ZELTAN STORE — DEVSECOPS PIPELINE"
+          echo "================================================"
+          echo "  Workflow : ${{ github.workflow }}"
+          echo "  Branch   : ${{ github.ref_name }}"
+          echo "  Commit   : ${{ github.sha }}"
+          echo "  Actor    : ${{ github.actor }}"
+          echo "  Run #    : ${{ github.run_number }}"
+          echo "------------------------------------------------"
+          echo "  CI       : $CI_RESULT"
+          echo "  CD       : $CD_RESULT"
+          echo "------------------------------------------------"
+          echo "  $OVERALL"
+          echo "  $OVERALL_MSG"
           echo "================================================"
