@@ -262,7 +262,7 @@ jobs:
       # SARIF = Static Analysis Results Interchange Format
       # --------------------------------------------------------------------------
       - name: 📊 Generate SARIF Security Report
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.35.0
         if: always()
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
