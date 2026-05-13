@@ -1,0 +1,69 @@
+# ============================================================
+# DEPENDABOT CONFIGURATION — ZELTAN STORE
+# ============================================================
+# Dependabot continuously monitors:
+#   - npm packages
+#   - GitHub Actions
+#   - Docker dependencies
+#
+# It automatically opens Pull Requests when:
+#   - security vulnerabilities are found
+#   - newer safe versions are available
+#
+# BENEFITS:
+#   - automatic dependency patching
+#   - early vulnerability detection
+#   - reduced maintenance burden
+#   - safer supply chain
+# ============================================================
+
+version: 2
+
+updates:
+
+  # ==========================================================
+  # NPM DEPENDENCIES
+  # ==========================================================
+  - package-ecosystem: "npm"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+
+    # Limit simultaneous PRs
+    open-pull-requests-limit: 5
+
+    # Labels added automatically
+    labels:
+      - "security"
+      - "dependencies"
+      - "npm"
+
+    # Automatically group minor updates
+    groups:
+      npm-minor-patch:
+        patterns:
+          - "*"
+
+  # ==========================================================
+  # GITHUB ACTIONS
+  # ==========================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    labels:
+      - "security"
+      - "github-actions"
+
+  # ==========================================================
+  # DOCKER
+  # ==========================================================
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+
+    labels:
+      - "security"
+      - "docker"
