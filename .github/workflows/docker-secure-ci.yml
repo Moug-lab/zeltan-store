@@ -368,7 +368,7 @@ jobs:
 
     needs: ci
 
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev')
 
     steps:
 
@@ -406,7 +406,8 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
 
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/dev' }}
             type=sha,prefix=,format=short
             type=raw,value=build-${{ github.run_number }}
 
