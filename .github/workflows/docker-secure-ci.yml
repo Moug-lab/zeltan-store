@@ -286,7 +286,7 @@ jobs:
       #   - CRITICAL CVEs
       #
       - name: 🛡️ Scan Image for Vulnerabilities (Trivy)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ${{ env.IMAGE_NAME }}:latest
           format: table
