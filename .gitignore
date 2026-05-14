@@ -3,16 +3,49 @@ node_modules/
 
 # Environment files
 .env
+.env.*
 aws.env
 aws-temp.env
 
 # Logs
 *.log
+logs/
 
-# Notes / documents
-*.txt
-*.pdf
+# Runtime files
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage
+coverage/
 
 # OS files
 .DS_Store
 Thumbs.db
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Notes/documents
+*.txt
+*.pdf
+
+# AWS / certificates
+*.pem
+*.key
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Sensitive Terraform variables
+terraform.tfvars
+
+# SSH Keys
+*.pem
