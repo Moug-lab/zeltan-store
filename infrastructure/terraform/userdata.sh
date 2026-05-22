@@ -63,54 +63,32 @@ EOF
 # ============================================================
 # CREATE NGINX CONFIG
 # ============================================================
-
 cat > /home/ubuntu/zeltan-store/nginx/default.conf <<EOF
-# ============================================================
-# HTTP → HTTPS REDIRECT
-# ============================================================
-
 server {
+
     listen 80;
+
     server_name zeltan-store.duckdns.org;
-    return 301 https://\$host\$request_uri;
-}
-
-# ============================================================
-# HTTPS SERVER
-# ============================================================
-
-server {
-    listen 443 ssl;
-    server_name zeltan-store.duckdns.org;
-
-    ssl_certificate     /etc/nginx/certs/fullchain.pem;
-    ssl_certificate_key /etc/nginx/certs/privkey.pem;
-    ssl_protocols       TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers on;
-
-    # ========================================================
-    # SECURITY HEADERS
-    # ========================================================
-
-    add_header X-Frame-Options         SAMEORIGIN;
-    add_header X-Content-Type-Options  nosniff;
-    add_header X-XSS-Protection        "1; mode=block";
-    add_header Referrer-Policy         no-referrer-when-downgrade;
-
-    # ========================================================
-    # REVERSE PROXY
-    # ========================================================
 
     location / {
-        proxy_pass              http://backend:5000;
-        proxy_http_version      1.1;
-        proxy_set_header        Upgrade            \$http_upgrade;
-        proxy_set_header        Connection         "upgrade";
-        proxy_set_header        Host               \$host;
-        proxy_set_header        X-Real-IP          \$remote_addr;
-        proxy_set_header        X-Forwarded-For    \$proxy_add_x_forwarded_for;
-        proxy_set_header        X-Forwarded-Proto  \$scheme;
-        proxy_cache_bypass      \$http_upgrade;
+
+        proxy_pass http://backend:5000;
+
+        proxy_http_version 1.1;
+
+        proxy_set_header Upgrade \$http_upgrade;
+
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host \$host;
+
+        proxy_cache_bypass \$http_upgrade;
+
+        proxy_set_header X-Real-IP \$remote_addr;
+
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
 EOF
