@@ -4,7 +4,7 @@
 # ZELTAN STORE — FULL PLATFORM BOOTSTRAP
 # ============================================================
 
-# Update Linux
+# Update system
 apt-get update -y
 
 # Install Docker
@@ -55,40 +55,40 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
     depends_on:
       - backend
+
+volumes:
+  letsencrypt:
+  certbot-webroot:
 EOF
 
 # ============================================================
 # CREATE NGINX CONFIG
 # ============================================================
+
 cat > /home/ubuntu/zeltan-store/nginx/default.conf <<EOF
 server {
-
     listen 80;
-
     server_name zeltan-store.duckdns.org;
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+}
+
 
     location / {
-
-        proxy_pass http://backend:5000;
-
-        proxy_http_version 1.1;
-
-        proxy_set_header Upgrade \$http_upgrade;
-
-        proxy_set_header Connection "upgrade";
-
-        proxy_set_header Host \$host;
-
-        proxy_cache_bypass \$http_upgrade;
-
-        proxy_set_header X-Real-IP \$remote_addr;
-
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_pass              http://backend:5000;
+        proxy_http_version      1.1;
+        proxy_set_header        Upgrade             \$http_upgrade;
+        proxy_set_header        Connection          "upgrade";
+        proxy_set_header        Host                \$host;
+        proxy_set_header        X-Real-IP           \$remote_addr;
+        proxy_set_header        X-Forwarded-For     \$proxy_add_x_forwarded_for;
+        proxy_set_header        X-Forwarded-Proto   \$scheme;
+        proxy_cache_bypass      \$http_upgrade;
     }
 }
 EOF
