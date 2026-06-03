@@ -7,14 +7,13 @@
 # Update system
 apt-get update -y
 
-# Install Docker
-apt-get install -y docker.io
+# ============================================================
+# INSTALL DOCKER
+# ============================================================
 
-# Enable and start Docker
+apt-get install -y docker.io
 systemctl enable docker
 systemctl start docker
-
-# Add ubuntu user to docker group
 usermod -aG docker ubuntu
 
 # ============================================================
@@ -27,14 +26,17 @@ curl -SL https://github.com/docker/compose/releases/download/v2.39.1/docker-comp
 chmod +x /usr/local/bin/docker-compose
 ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
 
-# Create application directories
+# ============================================================
+# CREATE APPLICATION DIRECTORIES
+# ============================================================
+
 mkdir -p /home/ubuntu/zeltan-store/nginx
 
 # ============================================================
 # CREATE DOCKER COMPOSE FILE
 # ============================================================
 
-cat > /home/ubuntu/zeltan-store/docker-compose.yml <<EOF
+cat > /home/ubuntu/zeltan-store/docker-compose.yml <<'EOF'
 services:
 
   backend:
@@ -54,12 +56,32 @@ services:
     restart: always
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
       - letsencrypt:/etc/letsencrypt
       - certbot-webroot:/var/www/certbot
     depends_on:
       - backend
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: zeltan-certbot
+    restart: "no"
+    volumes:
+      - letsencrypt:/etc/letsencrypt
+      - certbot-webroot:/var/www/certbot
+    command:
+      - certonly
+      - --webroot
+      - --webroot-path=/var/www/certbot
+      - --email
+      - mabms2024@hotmail.com
+      - --agree-tos
+      - --no-eff-email
+      - --non-interactive
+      - -d
+      - zeltan-store.duckdns.org
 
 volumes:
   letsencrypt:
@@ -70,25 +92,39 @@ EOF
 # CREATE NGINX CONFIG
 # ============================================================
 
-cat > /home/ubuntu/zeltan-store/nginx/default.conf <<EOF
+cat > /home/ubuntu/zeltan-store/nginx/default.conf <<'EOF'
 server {
     listen 80;
     server_name zeltan-store.duckdns.org;
+
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
+server {
+    listen 443 ssl http2;
+    server_name zeltan-store.duckdns.org;
+
+    ssl_certificate     /etc/letsencrypt/live/zeltan-store.duckdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/zeltan-store.duckdns.org/privkey.pem;
+
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
 
     location / {
         proxy_pass              http://backend:5000;
         proxy_http_version      1.1;
-        proxy_set_header        Upgrade             \$http_upgrade;
+        proxy_set_header        Upgrade             $http_upgrade;
         proxy_set_header        Connection          "upgrade";
-        proxy_set_header        Host                \$host;
-        proxy_set_header        X-Real-IP           \$remote_addr;
-        proxy_set_header        X-Forwarded-For     \$proxy_add_x_forwarded_for;
-        proxy_set_header        X-Forwarded-Proto   \$scheme;
-        proxy_cache_bypass      \$http_upgrade;
+        proxy_set_header        Host                $host;
+        proxy_set_header        X-Real-IP           $remote_addr;
+        proxy_set_header        X-Forwarded-For     $proxy_add_x_forwarded_for;
+        proxy_set_header        X-Forwarded-Proto   $scheme;
     }
 }
 EOF
