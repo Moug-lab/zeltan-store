@@ -184,21 +184,17 @@ cat > /home/ubuntu/zeltan-store/scripts/enable-https.sh <<'SCRIPT'
 # ============================================================
 
 STORE_DIR="/home/ubuntu/zeltan-store"
-CERT_PATH="/var/lib/docker/volumes/zeltan-store_letsencrypt/_data/live/zeltan-store.duckdns.org"
 
 echo ">>> Checking certificate exists..."
 
-# Check certificate files exist in Docker volume
 if docker run --rm \
     -v zeltan-store_letsencrypt:/certs \
     alpine test -f /certs/live/zeltan-store.duckdns.org/fullchain.pem; then
 
     echo ">>> Certificate found. Enabling HTTPS nginx config..."
 
-    # Swap HTTP-only config for HTTPS config
     cp $STORE_DIR/nginx/default-https.conf $STORE_DIR/nginx/default.conf
 
-    # Restart nginx to load new config
     cd $STORE_DIR
     docker-compose restart nginx
 
@@ -206,7 +202,6 @@ if docker run --rm \
     echo ">>> Waiting 3 seconds for nginx to reload..."
     sleep 3
 
-    # Verify HTTPS locally
     echo ">>> Testing HTTPS locally..."
     curl -sk https://localhost | head -c 200
 
@@ -223,6 +218,149 @@ fi
 SCRIPT
 
 chmod +x /home/ubuntu/zeltan-store/scripts/enable-https.sh
+
+# ============================================================
+# CERTIFICATE RENEWAL SCRIPT — renew-certs.sh
+# Runs certbot renew + reloads nginx if certificate updated
+# ============================================================
+
+cat > /home/ubuntu/zeltan-store/scripts/renew-certs.sh <<'SCRIPT'
+#!/bin/bash
+
+# ============================================================
+# CERTIFICATE RENEWAL + NGINX RELOAD
+# Scheduled via cron — runs twice daily
+# ============================================================
+
+STORE_DIR="/home/ubuntu/zeltan-store"
+LOGFILE="/var/log/zeltan-certbot-renewal.log"
+
+echo "---------------------------------------------" >> $LOGFILE
+echo "Renewal check: $(date)" >> $LOGFILE
+
+# Run certbot renew inside a one-off container
+docker run --rm \
+    -v zeltan-store_letsencrypt:/etc/letsencrypt \
+    -v zeltan-store_certbot-webroot:/var/www/certbot \
+    certbot/certbot:latest renew --quiet 2>> $LOGFILE
+
+RENEWAL_EXIT=$?
+
+if [ $RENEWAL_EXIT -eq 0 ]; then
+    echo "Certbot renew succeeded. Reloading nginx..." >> $LOGFILE
+
+    # Reload nginx gracefully (no downtime)
+    docker exec zeltan-nginx nginx -s reload >> $LOGFILE 2>&1
+
+    echo "Nginx reloaded." >> $LOGFILE
+else
+    echo "Certbot renew failed with exit code $RENEWAL_EXIT" >> $LOGFILE
+fi
+
+echo "---------------------------------------------" >> $LOGFILE
+SCRIPT
+
+chmod +x /home/ubuntu/zeltan-store/scripts/renew-certs.sh
+
+# ============================================================
+# HEALTH CHECK SCRIPT — health-check.sh
+# Verifies backend, nginx HTTP, and nginx HTTPS are all alive
+# ============================================================
+
+cat > /home/ubuntu/zeltan-store/scripts/health-check.sh <<'SCRIPT'
+#!/bin/bash
+
+# ============================================================
+# PLATFORM HEALTH CHECK
+# Run manually or via cron
+# ============================================================
+
+STORE_DIR="/home/ubuntu/zeltan-store"
+LOGFILE="/var/log/zeltan-health.log"
+PASS=0
+FAIL=0
+
+log() {
+    echo "$1" | tee -a $LOGFILE
+}
+
+log ""
+log "============================================="
+log "Health Check: $(date)"
+log "============================================="
+
+# --- Check 1: Backend container running ---
+if docker ps --format '{{.Names}}' | grep -q "zeltan-backend"; then
+    log ">>> [PASS] Backend container: running"
+    PASS=$((PASS+1))
+else
+    log ">>> [FAIL] Backend container: not running"
+    FAIL=$((FAIL+1))
+fi
+
+# --- Check 2: Nginx container running ---
+if docker ps --format '{{.Names}}' | grep -q "zeltan-nginx"; then
+    log ">>> [PASS] Nginx container: running"
+    PASS=$((PASS+1))
+else
+    log ">>> [FAIL] Nginx container: not running"
+    FAIL=$((FAIL+1))
+fi
+
+# --- Check 3: Backend API response ---
+BACKEND_RESPONSE=$(docker exec zeltan-nginx wget -qO- http://backend:5000 2>/dev/null)
+if echo "$BACKEND_RESPONSE" | grep -q "Zeltan Store API Running"; then
+    log ">>> [PASS] Backend API: responding"
+    PASS=$((PASS+1))
+else
+    log ">>> [FAIL] Backend API: not responding"
+    FAIL=$((FAIL+1))
+fi
+
+# --- Check 4: HTTPS endpoint ---
+HTTPS_RESPONSE=$(curl -sk https://localhost 2>/dev/null)
+if echo "$HTTPS_RESPONSE" | grep -q "Zeltan Store API Running"; then
+    log ">>> [PASS] HTTPS endpoint: responding"
+    PASS=$((PASS+1))
+else
+    log ">>> [WARN] HTTPS endpoint: not responding (expected if HTTPS not yet enabled)"
+fi
+
+# --- Check 5: Certificate expiry ---
+EXPIRY=$(docker run --rm \
+    -v zeltan-store_letsencrypt:/certs \
+    alpine sh -c "cat /certs/live/zeltan-store.duckdns.org/cert.pem 2>/dev/null" \
+    | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+
+if [ -n "$EXPIRY" ]; then
+    log ">>> [PASS] Certificate expiry: $EXPIRY"
+    PASS=$((PASS+1))
+else
+    log ">>> [WARN] Certificate: not yet issued"
+fi
+
+log ""
+log "Result: $PASS passed, $FAIL failed"
+log "============================================="
+SCRIPT
+
+chmod +x /home/ubuntu/zeltan-store/scripts/health-check.sh
+
+# ============================================================
+# CRON JOBS — Certificate renewal + Health checks
+# ============================================================
+
+# Write cron jobs for ubuntu user
+crontab -u ubuntu - <<'CRON'
+# Zeltan Store — Automated Jobs
+
+# Certificate renewal — twice daily at 03:00 and 15:00
+0 3  * * * /home/ubuntu/zeltan-store/scripts/renew-certs.sh
+0 15 * * * /home/ubuntu/zeltan-store/scripts/renew-certs.sh
+
+# Health check — every 5 minutes
+*/5 * * * * /home/ubuntu/zeltan-store/scripts/health-check.sh
+CRON
 
 # ============================================================
 # SET PERMISSIONS
@@ -250,6 +388,8 @@ cat > /home/ubuntu/DEPLOYMENT.md <<'EOF'
 - Backend running
 - HTTP nginx running on port 80
 - Certbot ready (not yet run)
+- Renewal cron scheduled (03:00 + 15:00 daily)
+- Health check cron scheduled (every 5 minutes)
 
 ## Stage 2 — Update DuckDNS
 Get Elastic IP from Terraform output:
@@ -272,4 +412,14 @@ Expected: Certificate issued successfully.
     sudo /home/ubuntu/zeltan-store/scripts/enable-https.sh
 
 Expected: HTTPS working at https://zeltan-store.duckdns.org
+
+## Ongoing — Automated Jobs
+Certificate renewal:  /var/log/zeltan-certbot-renewal.log
+Health checks:        /var/log/zeltan-health.log
+
+Manual health check:
+    /home/ubuntu/zeltan-store/scripts/health-check.sh
+
+Manual renewal:
+    /home/ubuntu/zeltan-store/scripts/renew-certs.sh
 EOF
