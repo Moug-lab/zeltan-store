@@ -5,7 +5,7 @@
 resource "aws_security_group" "zeltan_sg" {
 
   name        = "${var.project_name}-sg"
-  description = "Security group for Zeltan Store backend"
+  description = "Security group for Zeltan Store — Docker Compose + k3s Kubernetes"
 
   # ------------------------------------------------------------
   # SSH
@@ -41,6 +41,18 @@ resource "aws_security_group" "zeltan_sg" {
   }
 
   # ------------------------------------------------------------
+  # KUBERNETES API SERVER
+  # Required for kubectl access and k3s cluster communication
+  # ------------------------------------------------------------
+  ingress {
+    description = "Kubernetes API Server"
+    from_port   = 6443
+    to_port     = 6443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # ------------------------------------------------------------
   # OUTBOUND INTERNET ACCESS
   # ------------------------------------------------------------
   egress {
@@ -51,12 +63,16 @@ resource "aws_security_group" "zeltan_sg" {
   }
 
   tags = {
-    Name = "${var.project_name}-sg"
+    Name        = "${var.project_name}-sg"
+    Project     = var.project_name
+    Environment = var.environment
   }
 }
 
 # ============================================================
 # PRODUCTION EC2 INSTANCE
+# t3.small — 2GB RAM, 2 vCPU
+# Supports Docker Compose + k3s Kubernetes simultaneously
 # ============================================================
 
 resource "aws_instance" "zeltan_server" {
@@ -72,20 +88,42 @@ resource "aws_instance" "zeltan_server" {
   ]
 
   # ------------------------------------------------------------
+  # ROOT VOLUME — 20GB
+  # Extra space for Docker images + k3s container images
+  # Default 8GB is not enough for both stacks
+  # ------------------------------------------------------------
+  root_block_device {
+    volume_size           = var.disk_size_gb
+    volume_type           = "gp3"
+    delete_on_termination = true
+
+    tags = {
+      Name        = "${var.project_name}-root-volume"
+      Project     = var.project_name
+      Environment = var.environment
+    }
+  }
+
+  # ------------------------------------------------------------
   # BOOTSTRAP SCRIPT
+  # Installs Docker, k3s, configures both stacks on first boot
   # ------------------------------------------------------------
   user_data = file("${path.module}/userdata.sh")
 
+  # Recreate EC2 if userdata changes — ensures clean deployments
   user_data_replace_on_change = true
 
   tags = {
     Name        = "${var.project_name}-server"
-    Environment = "production"
+    Project     = var.project_name
+    Environment = var.environment
   }
 }
 
 # ============================================================
 # ELASTIC IP
+# Static public IP — survives terraform destroy/apply cycles
+# Use this IP for DuckDNS and MongoDB Atlas Network Access
 # ============================================================
 
 resource "aws_eip" "zeltan_eip" {
@@ -93,9 +131,16 @@ resource "aws_eip" "zeltan_eip" {
   domain = "vpc"
 
   tags = {
-    Name = "${var.project_name}-eip"
+    Name        = "${var.project_name}-eip"
+    Project     = var.project_name
+    Environment = var.environment
   }
 }
+
+# ------------------------------------------------------------
+# ELASTIC IP ASSOCIATION
+# Attaches static IP to EC2 instance
+# ------------------------------------------------------------
 
 resource "aws_eip_association" "zeltan_eip_assoc" {
 
