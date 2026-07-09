@@ -6,7 +6,8 @@ const cors    = require('cors');
 const { connectDB } = require('./config/db');
 
 const app = express();
-
+// Trust the NGINX Ingress Controller
+app.set("trust proxy", 1);
 // ─────────────────────────────────────────────
 // 1. SECURITY HEADERS
 // ─────────────────────────────────────────────
